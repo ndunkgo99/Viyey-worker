@@ -2,33 +2,37 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
+    // Health check
     if (url.pathname === "/health") {
-      return new Response(
-        JSON.stringify({ status: "OK", worker: "viyey-worker-ndunkgo" }),
-        { headers: { "Content-Type": "application/json" }
-      );
+      const healthResponse = {
+        status: "OK",
+        worker: "viyey-worker-ndunkgo"
+      };
+      return new Response(JSON.stringify(healthResponse), {
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
+    // Summary (mock data)
     if (url.pathname === "/summary") {
-      // Sementara masih mock data
-      return new Response(
-        JSON.stringify({
-          onlineViewers: 0,
-          viewsToday: 5,
-          viewsYesterday: 3,
-          viewsThisWeek: 42,
-          viewsLastWeek: 87,
-          viewsThisYear: 1245,
-          totalViews: 2890,
-          totalVideos: 12,
-          likesToday: 0,
-          totalLikes: 0
-        }),
-        { headers: { "Content-Type": "application/json" }
-      );
+      const summary = {
+        onlineViewers: 0,
+        viewsToday: 5,
+        viewsYesterday: 3,
+        viewsThisWeek: 42,
+        viewsLastWeek: 87,
+        viewsThisYear: 1245,
+        totalViews: 2890,
+        totalVideos: 12,
+        likesToday: 0,
+        totalLikes: 0
+      };
+      return new Response(JSON.stringify(summary), {
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
-    // 🔸 Endpoint baru: Upload ke Bunny.net
+    // Upload to Bunny.net
     if (request.method === "POST" && url.pathname === "/upload") {
       const formData = await request.formData();
       const file = formData.get("file");
@@ -40,7 +44,6 @@ export default {
         });
       }
 
-      // 1. Kirim file ke Bunny.net
       const bunnyResponse = await fetch(
         `https://storage.bunnycdn.com/storage/${env.BUNNY_CDN_STORAGE_ID}/${file.name}`,
         {
@@ -73,9 +76,10 @@ export default {
       });
     }
 
+    // Default response
     return new Response(
       "Hello from viyey-worker! Use /health, /summary, or POST /upload",
-      { headers: { "Content-Type": "text/plain" } }
+      { headers: { "Content-Type": "text/plain" }
     );
-  } // <- Kurung kurawal ini harus pas dengan async fetch()
-} // <- Kurung kurawal ini harus pas dengan export default
+  }
+}
