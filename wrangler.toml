@@ -1,6 +1,7 @@
 name = "viyey-worker-ndunkgo"
 main = "worker.js"
 compatibility_date = "2025-11-04"
+account_id = "797d6d978d73425ad9ae4aba8d14c0fc"  # ← ID dari log error
 
 [vars]
 BUNNY_CDN_STORAGE_ID = "dummy"
