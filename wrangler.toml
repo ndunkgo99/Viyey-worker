@@ -1,10 +1,11 @@
 name = "viyey-worker-ndunkgo"
 main = "worker.js"
 compatibility_date = "2025-11-04"
-account_id = "797d6d978d73425ad9ae4aba8d14c0fc"  # ← ID dari log error
+account_id = "797d6d978d73425ad9ae4aba8d14c0fc"
 
 [vars]
-BUNNY_CDN_STORAGE_ID = "dummy"
-BUNNY_CDN_LIBRARY_ID = "dummy"
-SHRINKME_API_KEY = "dummy"
-FIREBASE_PROJECT_ID = "dummy"
+BUNNY_CDN_STORAGE_ID = "dummy"  # Akan diganti di GitHub Secrets
+BUNNY_CDN_LIBRARY_ID = "dummy"  # Akan diganti di GitHub Secrets
+BUNNY_CDN_API_KEY = "dummy"     # Akan diganti di GitHub Secrets
+SHRINKME_API_KEY = "dummy"      # Akan diganti di GitHub Secrets
+FIREBASE_PROJECT_ID = "dummy"   # Akan diganti di GitHub Secrets
