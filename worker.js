@@ -79,7 +79,7 @@ export default {
     // Default response
     return new Response(
       "Hello from viyey-worker! Use /health, /summary, or POST /upload",
-      { headers: { "Content-Type": "text/plain" }
+      { headers: { "Content-Type": "text/plain" } }
     );
-  }
-}
+  } // <-- Penutup fungsi async fetch() - kurung kurawal ini harus di sini
+} // <-- Penutup export default - kurung kurawal ini harus di sini
