@@ -1,3 +1,9 @@
 name = "viyey-worker"
 main = "worker.js"
 compatibility_date = "2025-11-04"
+
+[vars]
+BUNNY_CDN_STORAGE_ID = "dummy"
+BUNNY_CDN_LIBRARY_ID = "dummy"
+SHRINKME_API_KEY = "dummy"
+FIREBASE_PROJECT_ID = "dummy"
