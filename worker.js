@@ -5,7 +5,7 @@ export default {
     if (url.pathname === "/health") {
       return new Response(
         JSON.stringify({ status: "OK", worker: "viyey-worker-ndunkgo" }),
-        { headers: { "Content-Type": "application/json" } }
+        { headers: { "Content-Type": "application/json" }
       );
     }
 
@@ -75,7 +75,7 @@ export default {
 
     return new Response(
       "Hello from viyey-worker! Use /health, /summary, or POST /upload",
-      { headers: { "Content-Type": "text/plain" }
+      { headers: { "Content-Type": "text/plain" } }
     );
-  }
-}
+  } // <- Kurung kurawal ini harus pas dengan async fetch()
+} // <- Kurung kurawal ini harus pas dengan export default
