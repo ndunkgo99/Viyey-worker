@@ -20,7 +20,21 @@ jobs:
       - name: Install Wrangler
         run: npm install -g wrangler
 
+      - name: Check Wrangler Version
+        run: wrangler --version
+
+      - name: Check Files
+        run: |
+          ls -la
+          cat wrangler.toml
+          cat worker.js
+
       - name: Deploy to Cloudflare
+        run: wrangler deploy --dry-run
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Deploy to Cloudflare (Real)
         run: wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
