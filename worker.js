@@ -3,21 +3,22 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
-      return new Response(
-        JSON.stringify({ status: "OK", worker: "viyey-worker-ndunkgo" }),
-        { headers: { "Content-Type": "application/json" }
-      );
+      const healthResponse = {
+        status: "OK",
+        worker: "viyey-worker-ndunkgo"
+      };
+      return new Response(JSON.stringify(healthResponse), {
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
     if (url.pathname === "/summary") {
-      // Ambil data ringkasan dari Firestore
       const summary = await this.getSummary(env);
       return new Response(JSON.stringify(summary), {
         headers: { "Content-Type": "application/json" }
       });
     }
 
-    // 🔸 Endpoint baru: Upload ke Bunny.net + Simpan ke Firestore
     if (request.method === "POST" && url.pathname === "/upload") {
       const formData = await request.formData();
       const file = formData.get("file");
@@ -29,7 +30,6 @@ export default {
         });
       }
 
-      // 1. Kirim file ke Bunny.net
       const bunnyResponse = await fetch(
         `https://storage.bunnycdn.com/storage/${env.BUNNY_CDN_STORAGE_ID}/${file.name}`,
         {
@@ -51,20 +51,16 @@ export default {
 
       const bunnyUrl = `https://${env.BUNNY_CDN_STORAGE_ID}.b-cdn.net/${file.name}`;
 
-      // 2. Simpan metadata ke Firestore
-      const fileId = Date.now().toString(); // ID unik berdasarkan timestamp
+      const fileId = Date.now().toString();
       const fileData = {
         name: file.name,
         size: file.size,
         bunnyUrl: bunnyUrl,
         uploadedAt: new Date().toISOString(),
-        // shrinkMeUrl akan ditambahkan nanti di Fase 4
       };
 
       await this.saveFileToFirestore(env, fileId, fileData);
-
-      // 3. Update summary
-      await this.updateSummary(env, file.size, 1); // tambah 1 file, ukuran file.size
+      await this.updateSummary(env, file.size, 1);
 
       const response = {
         success: true,
@@ -85,7 +81,6 @@ export default {
     );
   },
 
-  // 🔸 Fungsi tambahan: Simpan file ke Firestore
   async saveFileToFirestore(env, fileId, fileData) {
     const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`;
     const payload = {
@@ -98,20 +93,17 @@ export default {
     };
 
     await fetch(firestoreUrl, {
-      method: "PATCH", // Gunakan PATCH untuk membuat/update dokumen
+      method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        "X-Firebase-Client": "fire-admin-node/11.11.1", // Opsional
       },
       body: JSON.stringify(payload)
     });
   },
 
-  // 🔸 Fungsi tambahan: Update summary di Firestore
   async updateSummary(env, fileSize, fileCount) {
     const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`;
     
-    // Ambil data summary sekarang
     const currentSummaryResponse = await fetch(firestoreUrl, {
       headers: { "Content-Type": "application/json" }
     });
@@ -124,7 +116,6 @@ export default {
       }
     }
 
-    // Update data
     const newTotalFiles = currentSummary.totalFiles + fileCount;
     const newTotalSize = currentSummary.totalSizeBytes + fileSize;
 
@@ -145,7 +136,6 @@ export default {
     });
   },
 
-  // 🔸 Fungsi tambahan: Ambil summary dari Firestore
   async getSummary(env) {
     const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`;
     const response = await fetch(firestoreUrl, {
@@ -162,7 +152,6 @@ export default {
         };
       }
     }
-    // Jika tidak ditemukan, kembalikan default
     return { totalFiles: 0, totalSizeBytes: 0, lastUpdated: "N/A" };
   }
 }
