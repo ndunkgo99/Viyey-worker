@@ -19,6 +19,7 @@ export default {
       });
     }
 
+    // 🔸 Endpoint baru: Upload ke Bunny.net + Simpan ke Firestore + ShrinkMe.io
     if (request.method === "POST" && url.pathname === "/upload") {
       const formData = await request.formData();
       const file = formData.get("file");
@@ -30,6 +31,7 @@ export default {
         });
       }
 
+      // 1. Kirim file ke Bunny.net
       const bunnyResponse = await fetch(
         `https://storage.bunnycdn.com/storage/${env.BUNNY_CDN_STORAGE_ID}/${file.name}`,
         {
@@ -51,22 +53,53 @@ export default {
 
       const bunnyUrl = `https://${env.BUNNY_CDN_STORAGE_ID}.b-cdn.net/${file.name}`;
 
+      // 2. Generate link monetisasi via ShrinkMe.io
+      let shrinkMeUrl = null;
+      try {
+        const shrinkMeResponse = await fetch("https://shrinkme.io/api/v1/link", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${env.SHRINKME_API_KEY}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            url: bunnyUrl,
+            // Tambahkan parameter lain jika diperlukan oleh ShrinkMe.io
+            // misalnya: "monetize": true, "title": file.name, dll
+          })
+        });
+
+        if (shrinkMeResponse.ok) {
+          const shrinkMeData = await shrinkMeResponse.json();
+          shrinkMeUrl = shrinkMeData.shortenedUrl; // atau nama field yang benar dari API
+        } else {
+          console.error("ShrinkMe.io API error:", await shrinkMeResponse.text());
+        }
+      } catch (e) {
+        console.error("Failed to call ShrinkMe.io API:", e);
+      }
+
+      // 3. Simpan metadata ke Firestore
       const fileId = Date.now().toString();
       const fileData = {
         name: file.name,
         size: file.size,
         bunnyUrl: bunnyUrl,
+        shrinkMeUrl: shrinkMeUrl, // Simpan link ShrinkMe.io
         uploadedAt: new Date().toISOString(),
       };
 
       await this.saveFileToFirestore(env, fileId, fileData);
-      await this.updateSummary(env, file.size, 1);
+
+      // 4. Update summary
+      await this.updateSummary(env, file.size, 1); // tambah 1 file, ukuran file.size
 
       const response = {
         success: true,
         originalName: file.name,
         size: file.size,
         bunnyUrl: bunnyUrl,
+        shrinkMeUrl: shrinkMeUrl, // Kembalikan link ShrinkMe.io ke frontend
         fileId: fileId
       };
 
@@ -88,6 +121,7 @@ export default {
         name: { stringValue: fileData.name },
         size: { integerValue: fileData.size.toString() },
         bunnyUrl: { stringValue: fileData.bunnyUrl },
+        shrinkMeUrl: { stringValue: fileData.shrinkMeUrl || "" }, // Simpan link ShrinkMe.io
         uploadedAt: { timestampValue: fileData.uploadedAt },
       }
     };
