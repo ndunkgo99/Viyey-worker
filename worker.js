@@ -19,7 +19,7 @@ export default {
       });
     }
 
-    // 🔸 Endpoint baru: Upload ke Bunny.net + Simpan ke Firestore + ShrinkMe.io
+    // 🔸 Endpoint: Upload ke Bunny.net + Simpan ke Firestore + ShrinkMe.io
     if (request.method === "POST" && url.pathname === "/upload") {
       const formData = await request.formData();
       const file = formData.get("file");
@@ -64,14 +64,12 @@ export default {
           },
           body: JSON.stringify({
             url: bunnyUrl,
-            // Tambahkan parameter lain jika diperlukan oleh ShrinkMe.io
-            // misalnya: "monetize": true, "title": file.name, dll
           })
         });
 
         if (shrinkMeResponse.ok) {
           const shrinkMeData = await shrinkMeResponse.json();
-          shrinkMeUrl = shrinkMeData.shortenedUrl; // atau nama field yang benar dari API
+          shrinkMeUrl = shrinkMeData.shortenedUrl; // Sesuaikan field jika berbeda
         } else {
           console.error("ShrinkMe.io API error:", await shrinkMeResponse.text());
         }
@@ -85,21 +83,21 @@ export default {
         name: file.name,
         size: file.size,
         bunnyUrl: bunnyUrl,
-        shrinkMeUrl: shrinkMeUrl, // Simpan link ShrinkMe.io
+        shrinkMeUrl: shrinkMeUrl,
         uploadedAt: new Date().toISOString(),
       };
 
       await this.saveFileToFirestore(env, fileId, fileData);
 
       // 4. Update summary
-      await this.updateSummary(env, file.size, 1); // tambah 1 file, ukuran file.size
+      await this.updateSummary(env, file.size, 1);
 
       const response = {
         success: true,
         originalName: file.name,
         size: file.size,
         bunnyUrl: bunnyUrl,
-        shrinkMeUrl: shrinkMeUrl, // Kembalikan link ShrinkMe.io ke frontend
+        shrinkMeUrl: shrinkMeUrl,
         fileId: fileId
       };
 
@@ -108,8 +106,76 @@ export default {
       });
     }
 
+    // 🔸 Endpoint baru: Hapus file dari Bunny.net + Firestore
+    if (request.method === "POST" && url.pathname === "/delete") {
+      const { fileId } = await request.json();
+
+      if (!fileId) {
+        return new Response(JSON.stringify({ error: "File ID is required" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      // 1. Ambil metadata file dari Firestore
+      const fileDocUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`;
+      const fileDocResponse = await fetch(fileDocUrl, {
+        headers: { "Content-Type": "application/json" }
+      });
+
+      if (!fileDocResponse.ok) {
+        return new Response(JSON.stringify({ error: "File not found in Firestore" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      const fileDoc = await fileDocResponse.json();
+      const fields = fileDoc.fields;
+      const bunnyUrl = fields.bunnyUrl?.stringValue;
+      const fileSize = parseInt(fields.size?.integerValue || "0");
+
+      if (!bunnyUrl) {
+        return new Response(JSON.stringify({ error: "Bunny URL not found for this file" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      // 2. Hapus file dari Bunny.net
+      const fileName = bunnyUrl.split('/').pop(); // Ambil nama file dari URL
+      const deleteBunnyResponse = await fetch(
+        `https://storage.bunnycdn.com/storage/${env.BUNNY_CDN_STORAGE_ID}/${fileName}`,
+        {
+          method: "DELETE",
+          headers: {
+            "AccessKey": env.BUNNY_CDN_API_KEY,
+          }
+        }
+      );
+
+      if (!deleteBunnyResponse.ok) {
+        const errorText = await deleteBunnyResponse.text();
+        console.error("Bunny delete failed:", errorText);
+        // Jangan kembalikan error jika hanya Bunny yang gagal — kita tetap hapus dari Firestore
+      }
+
+      // 3. Hapus dokumen dari Firestore
+      await fetch(fileDocUrl, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" }
+      });
+
+      // 4. Update summary (kurangi file dan ukuran)
+      await this.updateSummary(env, -fileSize, -1); // kurangi 1 file, kurangi ukuran file
+
+      return new Response(JSON.stringify({ success: true, message: "File deleted successfully" }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
     return new Response(
-      "Hello from viyey-worker! Use /health, /summary, or POST /upload",
+      "Hello from viyey-worker! Use /health, /summary, POST /upload, or POST /delete",
       { headers: { "Content-Type": "text/plain" } }
     );
   },
@@ -121,21 +187,19 @@ export default {
         name: { stringValue: fileData.name },
         size: { integerValue: fileData.size.toString() },
         bunnyUrl: { stringValue: fileData.bunnyUrl },
-        shrinkMeUrl: { stringValue: fileData.shrinkMeUrl || "" }, // Simpan link ShrinkMe.io
+        shrinkMeUrl: { stringValue: fileData.shrinkMeUrl || "" },
         uploadedAt: { timestampValue: fileData.uploadedAt },
       }
     };
 
     await fetch(firestoreUrl, {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
   },
 
-  async updateSummary(env, fileSize, fileCount) {
+  async updateSummary(env, fileSizeChange, fileCountChange) {
     const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`;
     
     const currentSummaryResponse = await fetch(firestoreUrl, {
@@ -150,22 +214,25 @@ export default {
       }
     }
 
-    const newTotalFiles = currentSummary.totalFiles + fileCount;
-    const newTotalSize = currentSummary.totalSizeBytes + fileSize;
+    // Update data
+    const newTotalFiles = currentSummary.totalFiles + fileCountChange;
+    const newTotalSize = currentSummary.totalSizeBytes + fileSizeChange;
+
+    // Pastikan tidak negatif
+    const finalTotalFiles = Math.max(0, newTotalFiles);
+    const finalTotalSize = Math.max(0, newTotalSize);
 
     const payload = {
       fields: {
-        totalFiles: { integerValue: newTotalFiles.toString() },
-        totalSizeBytes: { integerValue: newTotalSize.toString() },
+        totalFiles: { integerValue: finalTotalFiles.toString() },
+        totalSizeBytes: { integerValue: finalTotalSize.toString() },
         lastUpdated: { timestampValue: new Date().toISOString() },
       }
     };
 
     await fetch(firestoreUrl, {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
   },
