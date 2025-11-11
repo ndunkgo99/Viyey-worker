@@ -308,4 +308,4 @@ export default {
     }
     return { totalFiles: 0, totalSizeBytes: 0, lastUpdated: "N/A" };
   }
-}
+            }
