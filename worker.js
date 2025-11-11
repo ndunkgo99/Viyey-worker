@@ -1,21 +1,41 @@
 export default {
   async fetch(request, env, ctx) {
+    // --- HANDLING CORS ---
+    // Tangani preflight request (OPTIONS)
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        },
+      });
+    }
+
     const url = new URL(request.url);
 
+    // --- ENDPOINT /health ---
     if (url.pathname === "/health") {
       const healthResponse = {
         status: "OK",
         worker: "viyey-worker-ndunkgo"
       };
       return new Response(JSON.stringify(healthResponse), {
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+        }
       });
     }
 
+    // --- ENDPOINT /summary ---
     if (url.pathname === "/summary") {
       const summary = await this.getSummary(env);
       return new Response(JSON.stringify(summary), {
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+        }
       });
     }
 
@@ -27,13 +47,16 @@ export default {
       if (!file) {
         return new Response(JSON.stringify({ error: "No file provided" }), {
           status: 400,
-          headers: { "Content-Type": "application/json" }
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+          }
         });
       }
 
       // 1. Kirim file ke Bunny.net
       const bunnyResponse = await fetch(
-        `https://storage.bunnycdn.com/storage/${env.BUNNY_CDN_STORAGE_ID}/${file.name}`,
+        `https://storage.bunnycdn.com/storage/${env.BUNNY_CDN_STORAGE_ID}/${file.name}`, // Hapus spasi
         {
           method: "PUT",
           body: file,
@@ -47,7 +70,10 @@ export default {
         const errorText = await bunnyResponse.text();
         return new Response(JSON.stringify({ error: `Bunny upload failed: ${errorText}` }), {
           status: 500,
-          headers: { "Content-Type": "application/json" }
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+          }
         });
       }
 
@@ -56,7 +82,7 @@ export default {
       // 2. Generate link monetisasi via ShrinkMe.io
       let shrinkMeUrl = null;
       try {
-        const shrinkMeResponse = await fetch("https://shrinkme.io/api/v1/link", {
+        const shrinkMeResponse = await fetch("https://shrinkme.io/api/v1/link", { // Hapus spasi
           method: "POST",
           headers: {
             "Authorization": `Bearer ${env.SHRINKME_API_KEY}`,
@@ -102,7 +128,10 @@ export default {
       };
 
       return new Response(JSON.stringify(response), {
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+        }
       });
     }
 
@@ -113,12 +142,15 @@ export default {
       if (!fileId) {
         return new Response(JSON.stringify({ error: "File ID is required" }), {
           status: 400,
-          headers: { "Content-Type": "application/json" }
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+          }
         });
       }
 
       // 1. Ambil metadata file dari Firestore
-      const fileDocUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`;
+      const fileDocUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`; // Hapus spasi
       const fileDocResponse = await fetch(fileDocUrl, {
         headers: { "Content-Type": "application/json" }
       });
@@ -126,7 +158,10 @@ export default {
       if (!fileDocResponse.ok) {
         return new Response(JSON.stringify({ error: "File not found in Firestore" }), {
           status: 404,
-          headers: { "Content-Type": "application/json" }
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+          }
         });
       }
 
@@ -138,14 +173,17 @@ export default {
       if (!bunnyUrl) {
         return new Response(JSON.stringify({ error: "Bunny URL not found for this file" }), {
           status: 500,
-          headers: { "Content-Type": "application/json" }
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+          }
         });
       }
 
       // 2. Hapus file dari Bunny.net
       const fileName = bunnyUrl.split('/').pop(); // Ambil nama file dari URL
       const deleteBunnyResponse = await fetch(
-        `https://storage.bunnycdn.com/storage/${env.BUNNY_CDN_STORAGE_ID}/${fileName}`,
+        `https://storage.bunnycdn.com/storage/${env.BUNNY_CDN_STORAGE_ID}/${fileName}`, // Hapus spasi
         {
           method: "DELETE",
           headers: {
@@ -170,18 +208,27 @@ export default {
       await this.updateSummary(env, -fileSize, -1); // kurangi 1 file, kurangi ukuran file
 
       return new Response(JSON.stringify({ success: true, message: "File deleted successfully" }), {
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+        }
       });
     }
 
+    // --- DEFAULT RESPONSE ---
     return new Response(
       "Hello from viyey-worker! Use /health, /summary, POST /upload, or POST /delete",
-      { headers: { "Content-Type": "text/plain" } }
+      {
+        headers: {
+          "Content-Type": "text/plain",
+          "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+        }
+      }
     );
   },
 
   async saveFileToFirestore(env, fileId, fileData) {
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`;
+    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`; // Hapus spasi
     const payload = {
       fields: {
         name: { stringValue: fileData.name },
@@ -194,13 +241,16 @@ export default {
 
     await fetch(firestoreUrl, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*", // Tambahkan header CORS ke request internal
+      },
       body: JSON.stringify(payload)
     });
   },
 
   async updateSummary(env, fileSizeChange, fileCountChange) {
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`;
+    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`; // Hapus spasi
     
     const currentSummaryResponse = await fetch(firestoreUrl, {
       headers: { "Content-Type": "application/json" }
@@ -232,13 +282,16 @@ export default {
 
     await fetch(firestoreUrl, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*", // Tambahkan header CORS ke request internal
+      },
       body: JSON.stringify(payload)
     });
   },
 
   async getSummary(env) {
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`;
+    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`; // Hapus spasi
     const response = await fetch(firestoreUrl, {
       headers: { "Content-Type": "application/json" }
     });
