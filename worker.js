@@ -39,7 +39,7 @@ export default {
       });
     }
 
-    // 🔸 Endpoint: Upload ke Bunny.net + Simpan ke Firestore + ShrinkMe.io
+    // 🔸 Endpoint: Upload ke Bunny.net Video Library + Simpan ke Firestore + ShrinkMe.io
     if (request.method === "POST" && url.pathname === "/upload") {
       const formData = await request.formData();
       const file = formData.get("file");
@@ -54,42 +54,47 @@ export default {
         });
       }
 
-      // 1. Kirim file ke Bunny.net
-      const bunnyResponse = await fetch(
-        `https://storage.bunnycdn.com/storage/${env.BUNNY_CDN_STORAGE_ID}/${file.name}`, // Hapus spasi
+      // 1. Kirim file ke Bunny.net Video Library (Gunakan endpoint dan header yang benar)
+      const bunnyUploadResponse = await fetch(
+        `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos`, // Gunakan Video Library endpoint
         {
-          method: "PUT",
-          body: file,
+          method: "POST",
+          body: file, // Kirim file langsung
           headers: {
-            "AccessKey": env.BUNNY_CDN_API_KEY,
+            "Authorization": env.BUNNY_API_KEY, // Gunakan header Authorization
+            // Tidak perlu menambahkan Content-Type, biarkan browser set otomatis dengan boundary
           }
         }
       );
 
-      if (!bunnyResponse.ok) {
-        const errorText = await bunnyResponse.text();
+      if (!bunnyUploadResponse.ok) {
+        const errorText = await bunnyUploadResponse.text();
+        console.error("BunnyCDN Upload Error:", errorText); // Log untuk debugging
         return new Response(JSON.stringify({ error: `Bunny upload failed: ${errorText}` }), {
           status: 500,
           headers: {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+            "Access-Control-Allow-Origin": "*",
           }
         });
       }
 
-      const bunnyUrl = `https://${env.BUNNY_CDN_STORAGE_ID}.b-cdn.net/${file.name}`;
+      // Parse respons dari BunnyCDN untuk mendapatkan Video ID
+      const bunnyUploadData = await bunnyUploadResponse.json();
+      const bunnyVideoId = bunnyUploadData.guid; // Gunakan GUID dari respons
+      const bunnyVideoUrl = `https://iframe.mediadelivery.net/embed/${env.BUNNY_LIBRARY_ID}/${bunnyVideoId}`; // URL Player
 
-      // 2. Generate link monetisasi via ShrinkMe.io
+      // 2. Generate link monetisasi via ShrinkMe.io (gunakan URL Player sebagai target)
       let shrinkMeUrl = null;
       try {
-        const shrinkMeResponse = await fetch("https://shrinkme.io/api/v1/link", { // Hapus spasi
+        const shrinkMeResponse = await fetch("https://shrinkme.io/api/v1/link", { // Hapus spasi di URL
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${env.SHRINKME_API_KEY}`,
+            "Authorization": `Bearer ${env.SHRINKME_API_KEY}`, // Gunakan Bearer token
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            url: bunnyUrl,
+            url: bunnyVideoUrl, // Gunakan URL player untuk monetisasi
           })
         });
 
@@ -103,13 +108,15 @@ export default {
         console.error("Failed to call ShrinkMe.io API:", e);
       }
 
-      // 3. Simpan metadata ke Firestore
-      const fileId = Date.now().toString();
+      // 3. Simpan metadata ke Firestore (Gunakan GUID dari Bunny)
+      const fileId = bunnyVideoId; // Gunakan GUID dari Bunny sebagai ID file
       const fileData = {
         name: file.name,
         size: file.size,
-        bunnyUrl: bunnyUrl,
-        shrinkMeUrl: shrinkMeUrl,
+        bunnyVideoId: bunnyVideoId, // Simpan Video ID
+        bunnyLibraryId: env.BUNNY_LIBRARY_ID, // Simpan Library ID
+        bunnyPlayerUrl: bunnyVideoUrl, // Simpan URL player
+        shrinkMeUrl: shrinkMeUrl, // Simpan URL ShrinkMe
         uploadedAt: new Date().toISOString(),
       };
 
@@ -122,79 +129,60 @@ export default {
         success: true,
         originalName: file.name,
         size: file.size,
-        bunnyUrl: bunnyUrl,
+        bunnyUrl: bunnyVideoUrl, // Kembalikan URL player
         shrinkMeUrl: shrinkMeUrl,
-        fileId: fileId
+        fileId: fileId // Kembalikan GUID sebagai fileId
       };
 
       return new Response(JSON.stringify(response), {
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+          "Access-Control-Allow-Origin": "*",
         }
       });
     }
 
-    // 🔸 Endpoint baru: Hapus file dari Bunny.net + Firestore
+    // 🔸 Endpoint baru: Hapus video dari Bunny.net Video Library + Firestore
     if (request.method === "POST" && url.pathname === "/delete") {
-      const { fileId } = await request.json();
+      const { fileId } = await request.json(); // fileId sekarang adalah GUID video
 
       if (!fileId) {
-        return new Response(JSON.stringify({ error: "File ID is required" }), {
+        return new Response(JSON.stringify({ error: "File ID (Video GUID) is required" }), {
           status: 400,
           headers: {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+            "Access-Control-Allow-Origin": "*",
           }
         });
       }
 
-      // 1. Ambil metadata file dari Firestore
-      const fileDocUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`; // Hapus spasi
+      // 1. Ambil metadata file dari Firestore (Opsional, untuk ukuran)
+      const fileDocUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`;
       const fileDocResponse = await fetch(fileDocUrl, {
         headers: { "Content-Type": "application/json" }
       });
 
-      if (!fileDocResponse.ok) {
-        return new Response(JSON.stringify({ error: "File not found in Firestore" }), {
-          status: 404,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
-          }
-        });
-      }
+      let fileSize = 0;
+      if (fileDocResponse.ok) {
+        const fileDoc = await fileDocResponse.json();
+        const fields = fileDoc.fields;
+        fileSize = parseInt(fields.size?.integerValue || "0");
+      } // Jika tidak ditemukan, asumsi ukuran 0
 
-      const fileDoc = await fileDocResponse.json();
-      const fields = fileDoc.fields;
-      const bunnyUrl = fields.bunnyUrl?.stringValue;
-      const fileSize = parseInt(fields.size?.integerValue || "0");
-
-      if (!bunnyUrl) {
-        return new Response(JSON.stringify({ error: "Bunny URL not found for this file" }), {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
-          }
-        });
-      }
-
-      // 2. Hapus file dari Bunny.net
-      const fileName = bunnyUrl.split('/').pop(); // Ambil nama file dari URL
+      // 2. Hapus video dari Bunny.net Video Library
       const deleteBunnyResponse = await fetch(
-        `https://storage.bunnycdn.com/storage/${env.BUNNY_CDN_STORAGE_ID}/${fileName}`, // Hapus spasi
+        `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${fileId}`, // Gunakan Video Library endpoint delete
         {
           method: "DELETE",
           headers: {
-            "AccessKey": env.BUNNY_CDN_API_KEY,
+            "Authorization": env.BUNNY_API_KEY, // Gunakan header Authorization
           }
         }
       );
 
       if (!deleteBunnyResponse.ok) {
         const errorText = await deleteBunnyResponse.text();
-        console.error("Bunny delete failed:", errorText);
+        console.error("BunnyCDN Delete failed:", errorText);
         // Jangan kembalikan error jika hanya Bunny yang gagal — kita tetap hapus dari Firestore
       }
 
@@ -228,12 +216,14 @@ export default {
   },
 
   async saveFileToFirestore(env, fileId, fileData) {
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`; // Hapus spasi
+    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`;
     const payload = {
       fields: {
         name: { stringValue: fileData.name },
         size: { integerValue: fileData.size.toString() },
-        bunnyUrl: { stringValue: fileData.bunnyUrl },
+        bunnyVideoId: { stringValue: fileData.bunnyVideoId },
+        bunnyLibraryId: { stringValue: fileData.bunnyLibraryId },
+        bunnyPlayerUrl: { stringValue: fileData.bunnyPlayerUrl },
         shrinkMeUrl: { stringValue: fileData.shrinkMeUrl || "" },
         uploadedAt: { timestampValue: fileData.uploadedAt },
       }
@@ -250,7 +240,7 @@ export default {
   },
 
   async updateSummary(env, fileSizeChange, fileCountChange) {
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`; // Hapus spasi
+    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`;
     
     const currentSummaryResponse = await fetch(firestoreUrl, {
       headers: { "Content-Type": "application/json" }
@@ -291,7 +281,7 @@ export default {
   },
 
   async getSummary(env) {
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`; // Hapus spasi
+    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`;
     const response = await fetch(firestoreUrl, {
       headers: { "Content-Type": "application/json" }
     });
@@ -308,4 +298,4 @@ export default {
     }
     return { totalFiles: 0, totalSizeBytes: 0, lastUpdated: "N/A" };
   }
-            }
+}
