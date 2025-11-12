@@ -23,7 +23,7 @@ export default {
       return new Response(JSON.stringify(healthResponse), {
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+          "Access-Control-Allow-Origin": "*",
         }
       });
     }
@@ -34,7 +34,7 @@ export default {
       return new Response(JSON.stringify(summary), {
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+          "Access-Control-Allow-Origin": "*",
         }
       });
     }
@@ -49,28 +49,138 @@ export default {
           status: 400,
           headers: {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+            "Access-Control-Allow-Origin": "*",
           }
         });
       }
 
-      // 1. Kirim file ke Bunny.net Video Library (Gunakan endpoint dan header yang benar)
-      const bunnyUploadResponse = await fetch(
-        `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos`, // Gunakan Video Library endpoint
-        {
-          method: "POST",
-          body: file, // Kirim file langsung
-          headers: {
-            "Authorization": env.BUNNY_API_KEY, // Gunakan header Authorization
-            // Tidak perlu menambahkan Content-Type, biarkan browser set otomatis dengan boundary
+      try {
+        // 1. Buat video entry terlebih dahulu di BunnyCDN (menghasilkan GUID)
+        const createVideoResponse = await fetch(
+          `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos`,
+          {
+            method: "POST",
+            headers: {
+              "Authorization": env.BUNNY_API_KEY,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              title: file.name,
+            })
           }
-        }
-      );
+        );
 
-      if (!bunnyUploadResponse.ok) {
-        const errorText = await bunnyUploadResponse.text();
-        console.error("BunnyCDN Upload Error:", errorText); // Log untuk debugging
-        return new Response(JSON.stringify({ error: `Bunny upload failed: ${errorText}` }), {
+        if (!createVideoResponse.ok) {
+            const errorText = await createVideoResponse.text();
+            console.error("BunnyCDN Create Video Error:", errorText);
+            return new Response(JSON.stringify({ error: `Bunny create video failed: ${errorText}` }), {
+              status: 500,
+              headers: {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+              }
+            });
+        }
+
+        const createVideoData = await createVideoResponse.json();
+        const bunnyVideoId = createVideoData.guid;
+
+        // 2. Kirim file video ke endpoint upload spesifik GUID
+        const fileBuffer = await file.arrayBuffer();
+
+        const uploadVideoResponse = await fetch(
+          `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${bunnyVideoId}`,
+          {
+            method: "PUT",
+            body: fileBuffer,
+            headers: {
+              "Authorization": env.BUNNY_API_KEY,
+            }
+          }
+        );
+
+        if (!uploadVideoResponse.ok) {
+          const errorText = await uploadVideoResponse.text();
+          console.error("BunnyCDN Upload Video Error:", errorText);
+          // Hapus video entry jika upload gagal
+          try {
+              await fetch(`https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${bunnyVideoId}`, {
+                  method: "DELETE",
+                  headers: { "Authorization": env.BUNNY_API_KEY }
+              });
+          } catch (cleanupErr) {
+              console.error("Failed to cleanup failed upload:", cleanupErr);
+          }
+          return new Response(JSON.stringify({ error: `Bunny video upload failed: ${errorText}` }), {
+            status: 500,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            }
+          });
+        }
+
+        // 3. Generate link player
+        const bunnyVideoUrl = `https://iframe.mediadelivery.net/embed/${env.BUNNY_LIBRARY_ID}/${bunnyVideoId}`;
+
+        // 4. Generate link monetisasi via ShrinkMe.io
+        let shrinkMeUrl = null;
+        try {
+          const shrinkMeResponse = await fetch("https://shrinkme.io/api/v1/link", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${env.SHRINKME_API_KEY}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              url: bunnyVideoUrl,
+            })
+          });
+
+          if (shrinkMeResponse.ok) {
+            const shrinkMeData = await shrinkMeResponse.json();
+            shrinkMeUrl = shrinkMeData.shortenedUrl;
+          } else {
+            console.error("ShrinkMe.io API error:", await shrinkMeResponse.text());
+          }
+        } catch (e) {
+          console.error("Failed to call ShrinkMe.io API:", e);
+        }
+
+        // 5. Simpan metadata ke Firestore
+        const fileData = {
+          name: file.name,
+          size: file.size,
+          bunnyVideoId: bunnyVideoId,
+          bunnyLibraryId: env.BUNNY_LIBRARY_ID,
+          bunnyPlayerUrl: bunnyVideoUrl,
+          shrinkMeUrl: shrinkMeUrl,
+          uploadedAt: new Date().toISOString(),
+        };
+
+        await this.saveFileToFirestore(env, bunnyVideoId, fileData);
+
+        // 6. Update summary
+        await this.updateSummary(env, file.size, 1);
+
+        const response = {
+          success: true,
+          originalName: file.name,
+          size: file.size,
+          bunnyUrl: bunnyVideoUrl,
+          shrinkMeUrl: shrinkMeUrl,
+          fileId: bunnyVideoId
+        };
+
+        return new Response(JSON.stringify(response), {
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          }
+        });
+      } catch (e) {
+        console.error("Upload process error:", e);
+        return new Response(JSON.stringify({ error: `Upload process failed: ${e.message}` }), {
           status: 500,
           headers: {
             "Content-Type": "application/json",
@@ -78,73 +188,11 @@ export default {
           }
         });
       }
-
-      // Parse respons dari BunnyCDN untuk mendapatkan Video ID
-      const bunnyUploadData = await bunnyUploadResponse.json();
-      const bunnyVideoId = bunnyUploadData.guid; // Gunakan GUID dari respons
-      const bunnyVideoUrl = `https://iframe.mediadelivery.net/embed/${env.BUNNY_LIBRARY_ID}/${bunnyVideoId}`; // URL Player
-
-      // 2. Generate link monetisasi via ShrinkMe.io (gunakan URL Player sebagai target)
-      let shrinkMeUrl = null;
-      try {
-        const shrinkMeResponse = await fetch("https://shrinkme.io/api/v1/link", { // Hapus spasi di URL
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${env.SHRINKME_API_KEY}`, // Gunakan Bearer token
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            url: bunnyVideoUrl, // Gunakan URL player untuk monetisasi
-          })
-        });
-
-        if (shrinkMeResponse.ok) {
-          const shrinkMeData = await shrinkMeResponse.json();
-          shrinkMeUrl = shrinkMeData.shortenedUrl; // Sesuaikan field jika berbeda
-        } else {
-          console.error("ShrinkMe.io API error:", await shrinkMeResponse.text());
-        }
-      } catch (e) {
-        console.error("Failed to call ShrinkMe.io API:", e);
-      }
-
-      // 3. Simpan metadata ke Firestore (Gunakan GUID dari Bunny)
-      const fileId = bunnyVideoId; // Gunakan GUID dari Bunny sebagai ID file
-      const fileData = {
-        name: file.name,
-        size: file.size,
-        bunnyVideoId: bunnyVideoId, // Simpan Video ID
-        bunnyLibraryId: env.BUNNY_LIBRARY_ID, // Simpan Library ID
-        bunnyPlayerUrl: bunnyVideoUrl, // Simpan URL player
-        shrinkMeUrl: shrinkMeUrl, // Simpan URL ShrinkMe
-        uploadedAt: new Date().toISOString(),
-      };
-
-      await this.saveFileToFirestore(env, fileId, fileData);
-
-      // 4. Update summary
-      await this.updateSummary(env, file.size, 1);
-
-      const response = {
-        success: true,
-        originalName: file.name,
-        size: file.size,
-        bunnyUrl: bunnyVideoUrl, // Kembalikan URL player
-        shrinkMeUrl: shrinkMeUrl,
-        fileId: fileId // Kembalikan GUID sebagai fileId
-      };
-
-      return new Response(JSON.stringify(response), {
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        }
-      });
     }
 
-    // 🔸 Endpoint baru: Hapus video dari Bunny.net Video Library + Firestore
+    // 🔸 Endpoint: Hapus video dari Bunny.net Video Library + Firestore
     if (request.method === "POST" && url.pathname === "/delete") {
-      const { fileId } = await request.json(); // fileId sekarang adalah GUID video
+      const { fileId } = await request.json(); // fileId adalah GUID video
 
       if (!fileId) {
         return new Response(JSON.stringify({ error: "File ID (Video GUID) is required" }), {
@@ -167,15 +215,15 @@ export default {
         const fileDoc = await fileDocResponse.json();
         const fields = fileDoc.fields;
         fileSize = parseInt(fields.size?.integerValue || "0");
-      } // Jika tidak ditemukan, asumsi ukuran 0
+      }
 
       // 2. Hapus video dari Bunny.net Video Library
       const deleteBunnyResponse = await fetch(
-        `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${fileId}`, // Gunakan Video Library endpoint delete
+        `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${fileId}`,
         {
           method: "DELETE",
           headers: {
-            "Authorization": env.BUNNY_API_KEY, // Gunakan header Authorization
+            "Authorization": env.BUNNY_API_KEY,
           }
         }
       );
@@ -193,12 +241,12 @@ export default {
       });
 
       // 4. Update summary (kurangi file dan ukuran)
-      await this.updateSummary(env, -fileSize, -1); // kurangi 1 file, kurangi ukuran file
+      await this.updateSummary(env, -fileSize, -1);
 
       return new Response(JSON.stringify({ success: true, message: "File deleted successfully" }), {
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+          "Access-Control-Allow-Origin": "*",
         }
       });
     }
@@ -209,7 +257,7 @@ export default {
       {
         headers: {
           "Content-Type": "text/plain",
-          "Access-Control-Allow-Origin": "*", // Tambahkan header CORS
+          "Access-Control-Allow-Origin": "*",
         }
       }
     );
@@ -231,10 +279,7 @@ export default {
 
     await fetch(firestoreUrl, {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*", // Tambahkan header CORS ke request internal
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
   },
@@ -254,11 +299,8 @@ export default {
       }
     }
 
-    // Update data
     const newTotalFiles = currentSummary.totalFiles + fileCountChange;
     const newTotalSize = currentSummary.totalSizeBytes + fileSizeChange;
-
-    // Pastikan tidak negatif
     const finalTotalFiles = Math.max(0, newTotalFiles);
     const finalTotalSize = Math.max(0, newTotalSize);
 
@@ -272,10 +314,7 @@ export default {
 
     await fetch(firestoreUrl, {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*", // Tambahkan header CORS ke request internal
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
   },
