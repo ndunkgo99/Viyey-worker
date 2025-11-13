@@ -57,7 +57,7 @@ export default {
       try {
         // 1. Buat video entry terlebih dahulu di BunnyCDN (menghasilkan GUID)
         const createVideoResponse = await fetch(
-          `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos`,
+          `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos`, // <-- SPASI DIHAPUS
           {
             method: "POST",
             headers: {
@@ -89,7 +89,7 @@ export default {
         const fileBuffer = await file.arrayBuffer();
 
         const uploadVideoResponse = await fetch(
-          `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${bunnyVideoId}`,
+          `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${bunnyVideoId}`, // <-- SPASI DIHAPUS
           {
             method: "PUT",
             body: fileBuffer,
@@ -104,7 +104,7 @@ export default {
           console.error("BunnyCDN Upload Video Error:", errorText);
           // Hapus video entry jika upload gagal
           try {
-              await fetch(`https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${bunnyVideoId}`, {
+              await fetch(`https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${bunnyVideoId}`, { // <-- SPASI DIHAPUS
                   method: "DELETE",
                   headers: { "Authorization": env.BUNNY_API_KEY }
               });
@@ -121,12 +121,12 @@ export default {
         }
 
         // 3. Generate link player
-        const bunnyVideoUrl = `https://iframe.mediadelivery.net/embed/${env.BUNNY_LIBRARY_ID}/${bunnyVideoId}`;
+        const bunnyVideoUrl = `https://iframe.mediadelivery.net/embed/${env.BUNNY_LIBRARY_ID}/${bunnyVideoId}`; // <-- SPASI DIHAPUS
 
         // 4. Generate link monetisasi via ShrinkMe.io
         let shrinkMeUrl = null;
         try {
-          const shrinkMeResponse = await fetch("https://shrinkme.io/api/v1/link", {
+          const shrinkMeResponse = await fetch("https://shrinkme.io/api/v1/link", { // <-- SPASI DIHAPUS
             method: "POST",
             headers: {
               "Authorization": `Bearer ${env.SHRINKME_API_KEY}`,
@@ -205,7 +205,7 @@ export default {
       }
 
       // 1. Ambil metadata file dari Firestore (Opsional, untuk ukuran)
-      const fileDocUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`;
+      const fileDocUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`; // <-- SPASI DIHAPUS
       const fileDocResponse = await fetch(fileDocUrl, {
         headers: { "Content-Type": "application/json" }
       });
@@ -219,7 +219,7 @@ export default {
 
       // 2. Hapus video dari Bunny.net Video Library
       const deleteBunnyResponse = await fetch(
-        `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${fileId}`,
+        `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${fileId}`, // <-- SPASI DIHAPUS
         {
           method: "DELETE",
           headers: {
@@ -264,7 +264,7 @@ export default {
   },
 
   async saveFileToFirestore(env, fileId, fileData) {
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`;
+    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`; // <-- SPASI DIHAPUS
     const payload = {
       fields: {
         name: { stringValue: fileData.name },
@@ -285,7 +285,7 @@ export default {
   },
 
   async updateSummary(env, fileSizeChange, fileCountChange) {
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`;
+    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`; // <-- SPASI DIHAPUS
     
     const currentSummaryResponse = await fetch(firestoreUrl, {
       headers: { "Content-Type": "application/json" }
@@ -320,7 +320,7 @@ export default {
   },
 
   async getSummary(env) {
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`;
+    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`; // <-- SPASI DIHAPUS
     const response = await fetch(firestoreUrl, {
       headers: { "Content-Type": "application/json" }
     });
