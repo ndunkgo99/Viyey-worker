@@ -1,3 +1,4 @@
+// Updated: Fix Bunny.net AccessKey header + reconnect GitHub - 2026
 export default {
   async fetch(request, env, ctx) {
     // --- HANDLING CORS ---
