@@ -47,8 +47,7 @@ export default {
       if (!file) {
         return new Response(JSON.stringify({ error: "No file provided" }), {
           status: 400,
-          headers: {
-            "Content-Type": "application/json",
+          headers: {            "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
           }
         });
@@ -57,11 +56,11 @@ export default {
       try {
         // 1. Buat video entry terlebih dahulu di BunnyCDN (menghasilkan GUID)
         const createVideoResponse = await fetch(
-          `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos`, // <-- Tidak ada spasi
+          `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos`,
           {
             method: "POST",
             headers: {
-              "Authorization": env.BUNNY_API_KEY,
+              "AccessKey": env.BUNNY_API_KEY,
               "Content-Type": "application/json"
             },
             body: JSON.stringify({
@@ -89,24 +88,23 @@ export default {
         const fileBuffer = await file.arrayBuffer();
 
         const uploadVideoResponse = await fetch(
-          `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${bunnyVideoId}`, // <-- Tidak ada spasi
+          `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${bunnyVideoId}`,
           {
             method: "PUT",
             body: fileBuffer,
             headers: {
-              "Authorization": env.BUNNY_API_KEY,
+              "AccessKey": env.BUNNY_API_KEY,
             }
           }
         );
-
         if (!uploadVideoResponse.ok) {
           const errorText = await uploadVideoResponse.text();
           console.error("BunnyCDN Upload Video Error:", errorText);
           // Hapus video entry jika upload gagal
           try {
-              await fetch(`https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${bunnyVideoId}`, { // <-- Tidak ada spasi
+              await fetch(`https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${bunnyVideoId}`, {
                   method: "DELETE",
-                  headers: { "Authorization": env.BUNNY_API_KEY }
+                  headers: { "AccessKey": env.BUNNY_API_KEY }
               });
           } catch (cleanupErr) {
               console.error("Failed to cleanup failed upload:", cleanupErr);
@@ -121,12 +119,12 @@ export default {
         }
 
         // 3. Generate link player
-        const bunnyVideoUrl = `https://iframe.mediadelivery.net/embed/${env.BUNNY_LIBRARY_ID}/${bunnyVideoId}`; // <-- Tidak ada spasi
+        const bunnyVideoUrl = `https://iframe.mediadelivery.net/embed/${env.BUNNY_LIBRARY_ID}/${bunnyVideoId}`;
 
         // 4. Generate link monetisasi via ShrinkMe.io
         let shrinkMeUrl = null;
         try {
-          const shrinkMeResponse = await fetch("https://shrinkme.io/api/v1/link", { // <-- Tidak ada spasi
+          const shrinkMeResponse = await fetch("https://shrinkme.io/api/v1/link", {
             method: "POST",
             headers: {
               "Authorization": `Bearer ${env.SHRINKME_API_KEY}`,
@@ -147,8 +145,7 @@ export default {
           console.error("Failed to call ShrinkMe.io API:", e);
         }
 
-        // 5. Simpan metadata ke Firestore
-        const fileData = {
+        // 5. Simpan metadata ke Firestore        const fileData = {
           name: file.name,
           size: file.size,
           bunnyVideoId: bunnyVideoId,
@@ -197,15 +194,14 @@ export default {
       if (!fileId) {
         return new Response(JSON.stringify({ error: "File ID (Video GUID) is required" }), {
           status: 400,
-          headers: {
-            "Content-Type": "application/json",
+          headers: {            "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
           }
         });
       }
 
       // 1. Ambil metadata file dari Firestore (Opsional, untuk ukuran)
-      const fileDocUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`; // <-- Tidak ada spasi
+      const fileDocUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`;
       const fileDocResponse = await fetch(fileDocUrl, {
         headers: { "Content-Type": "application/json" }
       });
@@ -219,11 +215,11 @@ export default {
 
       // 2. Hapus video dari Bunny.net Video Library
       const deleteBunnyResponse = await fetch(
-        `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${fileId}`, // <-- Tidak ada spasi
+        `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${fileId}`,
         {
           method: "DELETE",
           headers: {
-            "Authorization": env.BUNNY_API_KEY,
+            "AccessKey": env.BUNNY_API_KEY,
           }
         }
       );
@@ -247,8 +243,7 @@ export default {
         headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
-        }
-      });
+        }      });
     }
 
     // --- DEFAULT RESPONSE ---
@@ -264,7 +259,7 @@ export default {
   },
 
   async saveFileToFirestore(env, fileId, fileData) {
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`; // <-- Tidak ada spasi
+    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/files/${fileId}`;
     const payload = {
       fields: {
         name: { stringValue: fileData.name },
@@ -285,7 +280,7 @@ export default {
   },
 
   async updateSummary(env, fileSizeChange, fileCountChange) {
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`; // <-- Tidak ada spasi
+    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`;
     
     const currentSummaryResponse = await fetch(firestoreUrl, {
       headers: { "Content-Type": "application/json" }
@@ -298,7 +293,6 @@ export default {
         currentSummary.totalSizeBytes = parseInt(data.fields.totalSizeBytes?.integerValue || "0");
       }
     }
-
     const newTotalFiles = currentSummary.totalFiles + fileCountChange;
     const newTotalSize = currentSummary.totalSizeBytes + fileSizeChange;
     const finalTotalFiles = Math.max(0, newTotalFiles);
@@ -320,7 +314,7 @@ export default {
   },
 
   async getSummary(env) {
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`; // <-- Tidak ada spasi
+    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/meta/summary`;
     const response = await fetch(firestoreUrl, {
       headers: { "Content-Type": "application/json" }
     });
@@ -337,4 +331,4 @@ export default {
     }
     return { totalFiles: 0, totalSizeBytes: 0, lastUpdated: "N/A" };
   }
-}
+};
