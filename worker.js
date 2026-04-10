@@ -1,4 +1,4 @@
-// Updated: Fix Bunny.net AccessKey header + reconnect GitHub - 2026
+// Updated: Fix Bunny.net Authorization header + reconnect GitHub - 2026
 export default {
   async fetch(request, env, ctx) {
     // --- HANDLING CORS ---
@@ -47,8 +47,8 @@ export default {
 
       if (!file) {
         return new Response(JSON.stringify({ error: "No file provided" }), {
-          status: 400,
-          headers: {            "Content-Type": "application/json",
+          status: 400,          headers: {
+            "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
           }
         });
@@ -56,12 +56,13 @@ export default {
 
       try {
         // 1. Buat video entry terlebih dahulu di BunnyCDN (menghasilkan GUID)
+        // ✅ PERBAIKAN: Gunakan "Authorization", bukan "AccessKey"
         const createVideoResponse = await fetch(
           `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos`,
           {
             method: "POST",
             headers: {
-              "AccessKey": env.BUNNY_API_KEY,
+              "Authorization": env.BUNNY_API_KEY, // ✅ BENAR
               "Content-Type": "application/json"
             },
             body: JSON.stringify({
@@ -71,15 +72,15 @@ export default {
         );
 
         if (!createVideoResponse.ok) {
-            const errorText = await createVideoResponse.text();
-            console.error("BunnyCDN Create Video Error:", errorText);
-            return new Response(JSON.stringify({ error: `Bunny create video failed: ${errorText}` }), {
-              status: 500,
-              headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-              }
-            });
+          const errorText = await createVideoResponse.text();
+          console.error("BunnyCDN Create Video Error:", errorText);
+          return new Response(JSON.stringify({ error: `Bunny create video failed: ${errorText}` }), {
+            status: 500,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            }
+          });
         }
 
         const createVideoData = await createVideoResponse.json();
@@ -88,14 +89,14 @@ export default {
         // 2. Kirim file video ke endpoint upload spesifik GUID
         const fileBuffer = await file.arrayBuffer();
 
+        // ✅ PERBAIKAN: Gunakan "Authorization", bukan "AccessKey"
         const uploadVideoResponse = await fetch(
           `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${bunnyVideoId}`,
           {
             method: "PUT",
             body: fileBuffer,
             headers: {
-              "AccessKey": env.BUNNY_API_KEY,
-            }
+              "Authorization": env.BUNNY_API_KEY, // ✅ BENAR            }
           }
         );
         if (!uploadVideoResponse.ok) {
@@ -103,12 +104,12 @@ export default {
           console.error("BunnyCDN Upload Video Error:", errorText);
           // Hapus video entry jika upload gagal
           try {
-              await fetch(`https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${bunnyVideoId}`, {
-                  method: "DELETE",
-                  headers: { "AccessKey": env.BUNNY_API_KEY }
-              });
+            await fetch(`https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${bunnyVideoId}`, {
+              method: "DELETE",
+              headers: { "Authorization": env.BUNNY_API_KEY } // ✅ BENAR
+            });
           } catch (cleanupErr) {
-              console.error("Failed to cleanup failed upload:", cleanupErr);
+            console.error("Failed to cleanup failed upload:", cleanupErr);
           }
           return new Response(JSON.stringify({ error: `Bunny video upload failed: ${errorText}` }), {
             status: 500,
@@ -145,8 +146,8 @@ export default {
         } catch (e) {
           console.error("Failed to call ShrinkMe.io API:", e);
         }
-
-        // 5. Simpan metadata ke Firestore        const fileData = {
+        // 5. Simpan metadata ke Firestore
+        const fileData = {
           name: file.name,
           size: file.size,
           bunnyVideoId: bunnyVideoId,
@@ -193,9 +194,9 @@ export default {
       const { fileId } = await request.json(); // fileId adalah GUID video
 
       if (!fileId) {
-        return new Response(JSON.stringify({ error: "File ID (Video GUID) is required" }), {
-          status: 400,
-          headers: {            "Content-Type": "application/json",
+        return new Response(JSON.stringify({ error: "File ID (Video GUID) is required" }), {          status: 400,
+          headers: {
+            "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
           }
         });
@@ -215,12 +216,13 @@ export default {
       }
 
       // 2. Hapus video dari Bunny.net Video Library
+      // ✅ PERBAIKAN: Gunakan "Authorization", bukan "AccessKey"
       const deleteBunnyResponse = await fetch(
         `https://video.bunnycdn.com/library/${env.BUNNY_LIBRARY_ID}/videos/${fileId}`,
         {
           method: "DELETE",
           headers: {
-            "AccessKey": env.BUNNY_API_KEY,
+            "Authorization": env.BUNNY_API_KEY, // ✅ BENAR
           }
         }
       );
@@ -241,10 +243,10 @@ export default {
       await this.updateSummary(env, -fileSize, -1);
 
       return new Response(JSON.stringify({ success: true, message: "File deleted successfully" }), {
-        headers: {
-          "Content-Type": "application/json",
+        headers: {          "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
-        }      });
+        }
+      });
     }
 
     // --- DEFAULT RESPONSE ---
@@ -290,8 +292,7 @@ export default {
     if (currentSummaryResponse.ok) {
       const data = await currentSummaryResponse.json();
       if (data.fields) {
-        currentSummary.totalFiles = parseInt(data.fields.totalFiles?.integerValue || "0");
-        currentSummary.totalSizeBytes = parseInt(data.fields.totalSizeBytes?.integerValue || "0");
+        currentSummary.totalFiles = parseInt(data.fields.totalFiles?.integerValue || "0");        currentSummary.totalSizeBytes = parseInt(data.fields.totalSizeBytes?.integerValue || "0");
       }
     }
     const newTotalFiles = currentSummary.totalFiles + fileCountChange;
